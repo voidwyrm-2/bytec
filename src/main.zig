@@ -33,10 +33,20 @@ pub fn main() !u8 {
     defer allocator.free(data);
 
     var lexer = Lexer.init(std.heap.page_allocator, data);
-    const toks = try lexer.lex();
+    const toks = lexer.lex() catch |err| {
+        std.debug.print("{s}\n", .{try lexer.getErrorMsg(err)});
+        std.process.exit(1);
+    };
+
+    //for (toks) |t| {
+    //    std.debug.print("{s}\n", .{try t.str()});
+    //}
 
     var generator = Generator.init(std.heap.page_allocator, toks);
-    const bytes = try generator.generate();
+    const bytes = generator.generate() catch {
+        std.debug.print("{s}\n", .{generator.errString});
+        std.process.exit(1);
+    };
 
     var f = try dir.createFile(output, .{});
 
