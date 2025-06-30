@@ -1,12 +1,19 @@
-commit.sh
-build/
-test/build/
-compile/
-dist/
-.DS_Store
-.vscode
-__pycache__
+# Compilation and caching outputs
+__pycache__/
 bin/
 obj/
-.zig-cache
-.zig-out
+zig-out/
+.zig-cache/
+pkg/
+build/
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+*.o
+
+# MacOS
+.DS_Store
+
+src/version.zig

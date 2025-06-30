@@ -1,0 +1,9 @@
+97 98 99 100 101 102 103 10
+
+# strings can be used to embed characters directly
+"hello there!\n"
+
+# use `([number])` to duplicate data
+(11) 125
+10
+(21) "hello"

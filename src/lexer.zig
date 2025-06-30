@@ -1,139 +1,232 @@
 const std = @import("std");
+const Allocator = std.mem.Allocator;
+const FixedBufferAllocator = std.heap.FixedBufferAllocator;
 const ArrayList = std.ArrayList;
-const AllocatorError = std.mem.Allocator.Error;
-const tokens_lib = @import("tokens.zig");
-const Token = tokens_lib.Token;
 
-const LexerError = error{ IllegalCharacter, UnterminatedString, InvalidEscapeCharacter } || AllocatorError;
+const Self = @This();
 
-pub const Lexer = struct {
-    text: []const u8,
-    idx: i64 = -1,
-    col: u64 = 0,
-    ln: usize = 0,
-    cchar: ?u8 = null,
-    alloc: std.mem.Allocator,
-    fn advance(self: *Lexer) void {
-        self.idx += 1;
-        self.col += 1;
-        if (self.idx < self.text.len) {
-            self.cchar = self.text[@intCast(self.idx)];
-        } else {
-            self.cchar = null;
-        }
+pub const LexerError = error{
+    IllegalCharacter,
+    UnterminatedStringLiteral,
+    InvalidEscapeCharacter,
+};
 
-        if (self.cchar == '\n') {
-            self.ln += 1;
-            self.col = 1;
-        }
-    }
+pub const TokenType = enum {
+    none,
+    number,
+    string,
+    paren_open,
+    paren_close,
 
-    fn isNumber(ch: u8) bool {
-        return ch >= '0' and ch <= '9';
-    }
-
-    fn collectNumber(self: *Lexer) LexerError!Token {
-        const start: u32 = @intCast(self.col);
-        const startln: u32 = @intCast(self.ln);
-        var prevCol: u64 = 0;
-        var str = ArrayList(u8).init(self.alloc);
-
-        while (self.cchar != null and Lexer.isNumber(self.cchar.?)) {
-            try str.append(self.cchar.?);
-            prevCol = self.col;
-            self.advance();
-        }
-
-        return Token.init(.Number, str.items, start, @intCast(if (self.col - 1 == 0) prevCol else self.col - 1), startln);
-    }
-
-    fn collectString(self: *Lexer) LexerError!Token {
-        const start: u32 = @intCast(self.col);
-        const startln: u32 = @intCast(self.ln);
-        var str = ArrayList(u8).init(self.alloc);
-        var escaped = false;
-
-        self.advance();
-
-        while (self.cchar != null and self.cchar != '"') {
-            if (escaped) {
-                try str.append(switch (self.cchar.?) {
-                    '\\', '\'', '"' => self.cchar.?,
-                    'n' => '\n',
-                    't' => '\t',
-                    'r' => '\r',
-                    'v' => 11,
-                    'f' => 12,
-                    'a' => 7,
-                    '0' => 0,
-                    else => {
-                        return error.InvalidEscapeCharacter;
-                    },
-                });
-                escaped = false;
-            } else if (self.cchar == '\\') {
-                escaped = true;
-            } else {
-                try str.append(self.cchar.?);
-            }
-            self.advance();
-        }
-
-        if (self.cchar != '"') {
-            self.col = start;
-            self.ln = startln;
-            return error.UnterminatedString;
-        }
-
-        self.advance();
-
-        return Token.init(.String, str.items, start, @intCast(self.col - 1), startln);
-    }
-
-    pub fn getErrorMsg(self: Lexer, kind: LexerError) ![]u8 {
-        const reason = switch (kind) {
-            LexerError.IllegalCharacter => try std.fmt.allocPrint(self.alloc, "illegal character '{c}'", .{self.cchar.?}),
-            LexerError.UnterminatedString => try std.fmt.allocPrint(self.alloc, "unterminated string literal", .{}),
-            LexerError.InvalidEscapeCharacter => try std.fmt.allocPrint(self.alloc, "invalid escape sequence character '{c}'", .{self.cchar.?}),
-            else => unreachable,
+    pub fn fromChar(ch: u8) ?TokenType {
+        return switch (ch) {
+            '(' => .paren_open,
+            ')' => .paren_close,
+            else => null,
         };
-        return try std.fmt.allocPrint(self.alloc, "error on line {d}, {d}: {s}", .{ self.ln, self.col, reason });
-    }
-
-    pub fn lex(self: *Lexer) LexerError![]Token {
-        var tokens = ArrayList(Token).init(self.alloc);
-
-        while (self.cchar != null) {
-            switch (self.cchar.?) {
-                ' ', '\n', '\t' => self.advance(),
-                '#' => {
-                    while (self.cchar != null and self.cchar != '\n') self.advance();
-                },
-                '(' => {
-                    try tokens.append(Token.init(.OpParen, "(", @intCast(self.col), @intCast(self.col), @intCast(self.ln)));
-                    self.advance();
-                },
-                ')' => {
-                    try tokens.append(Token.init(.CloseParen, ")", @intCast(self.col), @intCast(self.col), @intCast(self.ln)));
-                    self.advance();
-                },
-                '"' => try tokens.append(try self.collectString()),
-                else => {
-                    if (Lexer.isNumber(self.cchar.?)) {
-                        try tokens.append(try self.collectNumber());
-                    } else {
-                        return error.IllegalCharacter;
-                    }
-                },
-            }
-        }
-
-        return tokens.items;
-    }
-
-    pub fn init(alloc: std.mem.Allocator, text: []const u8) Lexer {
-        var l = Lexer{ .alloc = alloc, .text = text };
-        l.advance();
-        return l;
     }
 };
+
+pub const Token = struct {
+    kind: TokenType,
+    lit: []const u8,
+    col: usize,
+    ln: usize,
+
+    pub fn init(kind: TokenType, lit: []const u8, col: usize, ln: usize) Token {
+        return .{
+            .kind = kind,
+            .lit = lit,
+            .col = col,
+            .ln = ln,
+        };
+    }
+
+    pub fn simple(kind: TokenType, lit: []const u8) Token {
+        return Token.init(kind, lit, 0, 0);
+    }
+
+    pub fn errf(self: Token, allocator: Allocator, comptime fmt: []const u8, args: anytype) ![]const u8 {
+        const msg = try std.fmt.allocPrint(allocator, fmt, args);
+
+        return try std.fmt.allocPrint(allocator, "Error on line {d}, col {d}: {s}", .{ self.ln, self.col, msg });
+    }
+
+    pub fn str(self: Token, allocator: Allocator) ![]const u8 {
+        return try std.fmt.allocPrint(allocator, "<{any}, `{s}`, {d}, {d}>", .{ self.kind, self.lit, self.col, self.ln });
+    }
+};
+
+const string_delimiter = '"';
+const import_start = '{';
+const import_end = '}';
+const module_switch_delimiter = '$';
+const func_call_delimiter = '@';
+
+parent_allocator: Allocator,
+buf: []u8,
+fba: FixedBufferAllocator,
+allocator: Allocator,
+text: []const u8,
+err_string: []const u8 = "",
+ch: ?u8,
+idx: usize = 0,
+col: usize = 1,
+ln: usize = 1,
+
+fn isNumber(ch: u8) bool {
+    return ch >= '0' and '9' >= ch;
+}
+
+fn isIdent(ch: u8) bool {
+    return (ch >= 'a' and 'z' >= ch) or (ch >= 'A' and 'Z' >= ch) or isNumber(ch) or ch == '_';
+}
+
+pub fn init(allocator: Allocator, text: []const u8) !Self {
+    const buf = try allocator.alloc(u8, 1000000); // maybe find a better way to do this?
+    var fba = FixedBufferAllocator.init(buf);
+
+    return .{
+        .parent_allocator = allocator,
+        .buf = buf,
+        .fba = fba,
+        .allocator = fba.allocator(),
+        .text = text,
+        .ch = if (text.len > 0) text[0] else null,
+    };
+}
+
+pub fn deinit(self: *Self) void {
+    self.parent_allocator.free(self.buf);
+}
+
+fn errf(self: *Self, comptime fmt: []const u8, args: anytype) !void {
+    const token = Token.init(.none, "", self.col, self.ln);
+    self.err_string = try token.errf(self.allocator, fmt, args);
+}
+
+fn err(self: *Self, str: []const u8) void {
+    self.err_string = str;
+}
+
+fn advance(self: *Self) void {
+    self.idx += 1;
+    self.col += 1;
+
+    self.ch = if (self.idx < self.text.len) self.text[self.idx] else null;
+
+    if (self.ch) |ch| {
+        if (ch == '\n') {
+            self.ln += 1;
+            self.col = 0;
+        }
+    }
+}
+
+fn skipComment(self: *Self) void {
+    while (self.ch != null and self.ch != '\n') {
+        self.advance();
+    }
+}
+
+fn collectString(self: *Self) !Token {
+    const start = self.col;
+    const startln = self.ln;
+    var lit = ArrayList(u8).init(self.allocator);
+
+    var escaped = false;
+
+    self.advance();
+
+    while (self.ch) |ch| {
+        if (ch == '\n') {
+            break;
+        } else if (escaped) {
+            const char = switch (ch) {
+                '\\', '\'', '"' => ch,
+                'n' => '\n',
+                't' => '\t',
+                'a' => 7,
+                '0' => 0,
+                else => return error.InvalidEscapeCharacter,
+            };
+
+            try lit.append(char);
+            escaped = false;
+        } else if (ch == '\\') {
+            escaped = true;
+        } else if (ch == string_delimiter) {
+            break;
+        } else {
+            try lit.append(ch);
+        }
+        self.advance();
+    }
+
+    if (self.ch != string_delimiter) {
+        const token = Token.init(.number, "", start, startln);
+        self.err_string = try token.errf(self.allocator, "unterminated string literal", .{});
+        return error.UnterminatedStringLiteral;
+    }
+
+    self.advance();
+
+    return Token.init(.string, lit.items, start, startln);
+}
+
+fn collectNumber(self: *Self) !Token {
+    const start = self.col;
+    const startln = self.ln;
+    var lit = ArrayList(u8).init(self.allocator);
+
+    while (self.ch) |ch| {
+        if (!Self.isNumber(ch))
+            break;
+
+        try lit.append(ch);
+
+        self.advance();
+    }
+
+    return Token.init(.number, lit.items, start, startln);
+}
+
+fn collectIdent(self: *Self, kind: TokenType) !Token {
+    const start = self.col;
+    const startln = self.ln;
+    var lit = ArrayList(u8).init(self.allocator);
+
+    while (self.ch) |ch| {
+        if (!Self.isIdent(ch))
+            break;
+
+        try lit.append(ch);
+
+        self.advance();
+    }
+
+    return Token.init(kind, lit.items, start, startln);
+}
+
+pub fn lex(self: *Self) ![]Token {
+    var tokens = ArrayList(Token).init(self.allocator);
+
+    while (self.ch) |ch| {
+        switch (ch) {
+            ' ', '\t', '\n' => self.advance(),
+            '#' => self.skipComment(),
+            string_delimiter => try tokens.append(try self.collectString()),
+            else => if (TokenType.fromChar(ch)) |kind| {
+                try tokens.append(Token.init(kind, "", self.col, self.ln));
+                self.advance();
+            } else if (isNumber(ch)) {
+                try tokens.append(try self.collectNumber());
+            } else {
+                try self.errf("illegal character '{c}'", .{ch});
+                return error.IllegalCharacter;
+            },
+        }
+    }
+
+    return tokens.items;
+}

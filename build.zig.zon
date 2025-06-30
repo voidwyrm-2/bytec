@@ -1,0 +1,26 @@
+.{
+    .name = .bytec,
+
+    .version = "3.0.0",
+
+    .minimum_zig_version = "0.14.0",
+
+    .fingerprint = 0xac2e53aa29e7ff5f,
+
+    .dependencies = .{
+        .clap = .{
+            .url = "git+https://github.com/Hejsil/zig-clap#cc5c6a5d71a317ed4b0ad776842d1d0655f72d0a",
+            .hash = "clap-0.10.0-oBajB7jkAQAZ4cKLlzkeV9mDu2yGZvtN2QuOyfAfjBij",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "LICENSE",
+        "readme.md",
+        "example.in",
+        "example.bin",
+    },
+}
