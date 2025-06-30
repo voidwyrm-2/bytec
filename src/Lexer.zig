@@ -58,10 +58,6 @@ pub const Token = struct {
 };
 
 const string_delimiter = '"';
-const import_start = '{';
-const import_end = '}';
-const module_switch_delimiter = '$';
-const func_call_delimiter = '@';
 
 parent_allocator: Allocator,
 buf: []u8,
