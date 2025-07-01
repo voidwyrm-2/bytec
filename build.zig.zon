@@ -1,7 +1,7 @@
 .{
     .name = .bytec,
 
-    .version = "3.0.0",
+    .version = "3.1.1",
 
     .minimum_zig_version = "0.14.0",
 

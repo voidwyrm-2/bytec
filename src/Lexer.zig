@@ -145,7 +145,10 @@ fn collectString(self: *Self) !Token {
                 't' => '\t',
                 'a' => 7,
                 '0' => 0,
-                else => return error.InvalidEscapeCharacter,
+                else => {
+                    try self.errf("invalid escape character '{c}'", .{ch});
+                    return error.InvalidEscapeCharacter;
+                },
             };
 
             try lit.append(char);
