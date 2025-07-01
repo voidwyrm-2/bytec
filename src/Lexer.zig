@@ -1,6 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const FixedBufferAllocator = std.heap.FixedBufferAllocator;
+const ArenaAllocator = std.heap.ArenaAllocator;
 const ArrayList = std.ArrayList;
 
 const Self = @This();
@@ -60,8 +60,7 @@ pub const Token = struct {
 const string_delimiter = '"';
 
 parent_allocator: Allocator,
-buf: []u8,
-fba: FixedBufferAllocator,
+arena: *ArenaAllocator,
 allocator: Allocator,
 text: []const u8,
 err_string: []const u8 = "",
@@ -79,21 +78,23 @@ fn isIdent(ch: u8) bool {
 }
 
 pub fn init(allocator: Allocator, text: []const u8) !Self {
-    const buf = try allocator.alloc(u8, 1000000); // maybe find a better way to do this?
-    var fba = FixedBufferAllocator.init(buf);
-
-    return .{
+    var l: Self = .{
         .parent_allocator = allocator,
-        .buf = buf,
-        .fba = fba,
-        .allocator = fba.allocator(),
+        .arena = try allocator.create(ArenaAllocator),
+        .allocator = undefined,
         .text = text,
         .ch = if (text.len > 0) text[0] else null,
     };
+
+    l.arena.* = ArenaAllocator.init(allocator);
+    l.allocator = l.arena.allocator();
+
+    return l;
 }
 
 pub fn deinit(self: *Self) void {
-    self.parent_allocator.free(self.buf);
+    _ = self.arena.reset(.free_all);
+    self.parent_allocator.destroy(self.arena);
 }
 
 fn errf(self: *Self, comptime fmt: []const u8, args: anytype) !void {
