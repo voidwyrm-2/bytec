@@ -4,7 +4,7 @@ const io = std.io;
 
 const clap = @import("clap");
 
-const bytec_version = @import("version.zig").bytec_version; // dynamically generated via build.zig
+const buildzon = @import("build.zig.zon");
 
 const Lexer = @import("Lexer.zig");
 const Generator = @import("Generator.zig");
@@ -55,7 +55,7 @@ pub fn main() !u8 {
     }
 
     if (res.args.version != 0) {
-        try stdout.print("Bytec version {s}\n", .{bytec_version});
+        try stdout.print("Bytec version {s}\n", .{buildzon.version});
         return 0;
     }
 

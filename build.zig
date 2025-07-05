@@ -3,22 +3,6 @@ const sep = std.fs.path.sep_str;
 
 const builtin = @import("builtin");
 
-// this article is completely lying about the ZON import thing
-// https://renerocks.ai/blog/2025-04-27--version-in-zig/
-const zon: struct {
-    name: enum { bytec },
-    version: []const u8,
-    fingerprint: usize,
-    minimum_zig_version: []const u8,
-    dependencies: struct {
-        clap: struct {
-            url: []const u8,
-            hash: []const u8,
-        },
-    },
-    paths: [7][]const u8,
-} = @import("build.zig.zon");
-
 const exe_name = "bytec";
 
 const pkg_folder = "pkg";
@@ -42,15 +26,20 @@ fn addImports(b: *std.Build, root: *std.Build.Module, args: anytype) void {
     }
 }
 
+fn addProjectZon(b: *std.Build, root: *std.Build.Module, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const build_zig_zon = b.createModule(.{
+        .root_source_file = b.path("build.zig.zon"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    root.addImport("build.zig.zon", build_zig_zon);
+}
+
 pub fn build(b: *std.Build) !void {
     const native_only = b.option(bool, "native-only", "Only build the native target of the current OS/arch") orelse false;
 
     const optimize = std.builtin.OptimizeMode.Debug;
-
-    var output_file = try std.fs.cwd().createFile("src" ++ sep ++ "version.zig", .{});
-    defer output_file.close();
-
-    try output_file.writeAll("pub const " ++ exe_name ++ "_version = \"" ++ zon.version ++ "\";\n");
 
     if (native_only) {
         const resolved_target = b.resolveTargetQuery(.{});
@@ -62,6 +51,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         });
 
+        addProjectZon(b, exe.root_module, resolved_target, optimize);
         addImports(b, exe.root_module, .{ .optimize = optimize });
 
         const target_output = b.addInstallArtifact(exe, .{
@@ -113,6 +103,7 @@ pub fn build(b: *std.Build) !void {
                 .optimize = optimize,
             });
 
+            addProjectZon(b, exe.root_module, resolved_target, optimize);
             addImports(b, exe.root_module, .{ .target = resolved_target, .optimize = optimize });
 
             const target_triple = try t.zigTriple(b.allocator);
