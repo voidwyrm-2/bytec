@@ -180,7 +180,7 @@ fn collectNumber(self: *Self) !Token {
     var lit = ArrayList(u8).init(self.allocator);
 
     while (self.ch) |ch| {
-        if (!Self.isNumber(ch) and !(lit.items.len == 1 and lit.items[0] == '0' and (ch == 'b' or ch == 'b' or ch == 'o')))
+        if (!Self.isNumber(ch) and !(lit.items.len == 1 and lit.items[0] == '0' and (ch == 'b' or ch == 'o' or ch == 'x')))
             break;
 
         try lit.append(ch);
